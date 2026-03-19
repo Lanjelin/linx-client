@@ -5,17 +5,14 @@ import (
 	"path/filepath"
 )
 
-func getHomeDir() (homeDir string) {
-	homeDir = os.Getenv("HOME")
-	if homeDir == "" {
-		homeDir = getInput("Path to home directory", false)
+func getHomeDir() string {
+	if homeDir, err := os.UserHomeDir(); err == nil && homeDir != "" {
+		return homeDir
 	}
 
-	return
+	return getInput("Path to home directory", false)
 }
 
-func getConfigDir() (configDir string) {
-	configDir = filepath.Join(getHomeDir(), ".config")
-
-	return
+func getConfigDir() string {
+	return filepath.Join(getHomeDir(), ".config")
 }

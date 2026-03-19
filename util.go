@@ -1,13 +1,17 @@
 package main
 
 import (
+	"bufio"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/minio/sha256-simd"
 )
+
+var stdinReader = bufio.NewReader(os.Stdin)
 
 func checkErr(err error) {
 	if err != nil {
@@ -17,16 +21,18 @@ func checkErr(err error) {
 }
 
 func getInput(query string, allowBlank bool) (input string) {
-	for input == "" {
+	for {
 		fmt.Print(query + ": ")
-		fmt.Scanf("%s\n", &input)
+		line, err := stdinReader.ReadString('\n')
+		checkErr(err)
 
-		if allowBlank {
-			break
+		input = strings.TrimSpace(line)
+		if input == "" && !allowBlank {
+			continue
 		}
-	}
 
-	return
+		return
+	}
 }
 
 func sha256sum(r io.Reader) string {

@@ -2,21 +2,24 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 )
 
-func getHomeDir() (homeDir string) {
-	homeDir = os.Getenv("HOMEPATH")
-	if homeDir == "" {
-		homeDir = getInput("Path to home directory", false)
+func getHomeDir() string {
+	if homeDir, err := os.UserHomeDir(); err == nil && homeDir != "" {
+		return homeDir
 	}
 
-	return
+	if homeDir := os.Getenv("HOMEPATH"); homeDir != "" {
+		return homeDir
+	}
+
+	return getInput("Path to home directory", false)
 }
 
-func getConfigDir() (configDir string) {
-	configDir = os.Getenv("APPDATA")
-	if configDir == "" {
-		configDir = getInput("Path to config directory", false)
+func getConfigDir() string {
+	if configDir := os.Getenv("APPDATA"); configDir != "" {
+		return configDir
 	}
-	return
+	return filepath.Join(getHomeDir(), "AppData", "Roaming")
 }

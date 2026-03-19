@@ -16,10 +16,11 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
-	"github.com/timshannon/config"
 	"github.com/atotto/clipboard"
 	"github.com/mutantmonkey/golinx/progress"
+	"github.com/timshannon/config"
 )
 
 type RespOkJSON struct {
@@ -43,6 +44,10 @@ var Config struct {
 }
 
 var keys map[string]string
+
+var httpClient = &http.Client{
+	Timeout: 30 * time.Second,
+}
 
 func main() {
 	var del bool
@@ -153,18 +158,15 @@ func upload(filePath string, deleteKey string, accessKey string, randomize bool,
 		req.Header.Set("Linx-Expiry", strconv.FormatInt(expiry, 10))
 	}
 	if overwrite {
-		fileUrl := Config.siteurl + fileName
-		deleteKey, exists := keys[fileUrl]
-		if !exists {
-			checkErr(errors.New("No delete key for " + fileUrl))
-		}
+		_, deleteKey, err := findDeleteKeyFor(fileName)
+		checkErr(err)
 
 		req.Header.Set("Linx-Delete-Key", deleteKey)
 	}
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := httpClient.Do(req)
 	checkErr(err)
+	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	checkErr(err)
@@ -225,9 +227,9 @@ func deleteUrl(url string) {
 		req.Header.Set("Linx-Api-Key", Config.apikey)
 	}
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := httpClient.Do(req)
 	checkErr(err)
+	defer resp.Body.Close()
 
 	if resp.StatusCode == 200 {
 		fmt.Println("Deleted " + url)
@@ -260,11 +262,76 @@ func getKeys() {
 }
 
 func writeKeys() {
+	if Config.logfile == "" {
+		checkErr(errors.New("Logfile path not configured"))
+	}
+
+	if dir := filepath.Dir(Config.logfile); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			checkErr(err)
+		}
+	}
+
 	byt, err := json.Marshal(keys)
 	checkErr(err)
 
-	err = ioutil.WriteFile(Config.logfile, byt, 0600)
+	err = ioutil.WriteFile(Config.logfile, byt, 0o600)
 	checkErr(err)
+}
+
+func findDeleteKeyFor(identifier string) (string, string, error) {
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" {
+		return "", "", errors.New("No delete key for empty name")
+	}
+
+	if isHTTPURL(identifier) {
+		if key, ok := keys[identifier]; ok {
+			return identifier, key, nil
+		}
+		return "", "", errors.New("No delete key for " + identifier)
+	}
+
+	candidate := Config.siteurl + strings.TrimPrefix(identifier, "/")
+	if key, ok := keys[candidate]; ok {
+		return candidate, key, nil
+	}
+
+	base := path.Base(identifier)
+	for url, key := range keys {
+		if path.Base(url) == base {
+			return url, key, nil
+		}
+	}
+
+	return "", "", errors.New("No delete key for " + identifier)
+}
+
+func isHTTPURL(u string) bool {
+	lower := strings.ToLower(u)
+	return strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://")
+}
+
+func expandUserPath(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+
+	raw = os.ExpandEnv(raw)
+	if strings.HasPrefix(raw, "~/") {
+		homeDir := getHomeDir()
+		raw = filepath.Join(homeDir, strings.TrimPrefix(raw, "~/"))
+	}
+
+	return raw
+}
+
+func ensureTrailingSlash(u string) string {
+	if u == "" || strings.HasSuffix(u, "/") {
+		return u
+	}
+	return u + "/"
 }
 
 func parseConfig(configPath string) {
@@ -276,35 +343,31 @@ func parseConfig(configPath string) {
 		cfgFilePath = configPath
 	}
 
+	cfgFilePath = expandUserPath(cfgFilePath)
+
+	if err := os.MkdirAll(filepath.Dir(cfgFilePath), 0o700); err != nil {
+		checkErr(err)
+	}
+
 	cfg, err := config.LoadOrCreate(cfgFilePath)
 	checkErr(err)
 
-	Config.siteurl = cfg.String("siteurl", "")
-	Config.logfile = cfg.String("logfile", "")
-	Config.apikey = cfg.String("apikey", "")
+	Config.siteurl = ensureTrailingSlash(strings.TrimSpace(cfg.String("siteurl", "")))
+	Config.logfile = expandUserPath(cfg.String("logfile", ""))
+	Config.apikey = strings.TrimSpace(cfg.String("apikey", ""))
 
 	if Config.siteurl == "" || Config.logfile == "" {
 		fmt.Println("Configuring linx-client")
 		fmt.Println()
+
 		for Config.siteurl == "" {
 			Config.siteurl = getInput("Site url (ex: https://linx.example.com/)", false)
-
-			if lastChar := Config.siteurl[len(Config.siteurl)-1:]; lastChar != "/" {
-				Config.siteurl = Config.siteurl + "/"
-			}
+			Config.siteurl = ensureTrailingSlash(Config.siteurl)
 		}
 		cfg.SetValue("siteurl", Config.siteurl)
 
 		for Config.logfile == "" {
-			Config.logfile = getInput("Logfile path (ex: ~/.linxlog)", false)
-
-			homeDir := getHomeDir()
-			if lastChar := homeDir[len(homeDir)-1:]; lastChar != "/" {
-				homeDir = homeDir + "/"
-			}
-
-			Config.logfile = strings.Replace(Config.logfile, "~/", homeDir, 1)
-
+			Config.logfile = expandUserPath(getInput("Logfile path (ex: ~/.linxlog)", false))
 		}
 		cfg.SetValue("logfile", Config.logfile)
 
