@@ -60,6 +60,7 @@ func main() {
 	var configPath string
 	var noClipboard bool
 	var useSelifURL bool
+	var cleanLog bool
 
 	flag.BoolVar(&del, "d", false,
 		"Delete file at url (ex: -d https://linx.example.com/myphoto.jpg")
@@ -81,10 +82,17 @@ func main() {
 		"Disable automatic insertion into clipboard")
 	flag.BoolVar(&useSelifURL, "selif", false,
 		"Return selif url")
+	flag.BoolVar(&cleanLog, "cleanup", false,
+		"Remove dead entries from the logfile")
 	flag.Parse()
 
 	parseConfig(configPath)
 	getKeys()
+
+	if cleanLog {
+		cleanLogfile()
+		return
+	}
 
 	if del {
 		for _, url := range flag.Args() {
@@ -277,6 +285,60 @@ func writeKeys() {
 
 	err = ioutil.WriteFile(Config.logfile, byt, 0o600)
 	checkErr(err)
+}
+
+func cleanLogfile() {
+	fmt.Println("Checking logfile for dead entries...")
+
+	foundDead := false
+	for url := range keys {
+		alive, err := isURLAlive(url)
+		if err != nil {
+			fmt.Printf("Skipping %s: %v\n", url, err)
+			continue
+		}
+
+		if !alive {
+			fmt.Println("Removing dead entry:", url)
+			delete(keys, url)
+			foundDead = true
+		}
+	}
+
+	if foundDead {
+		writeKeys()
+		fmt.Println("Removed stale entries from", Config.logfile)
+	} else {
+		fmt.Println("No dead entries found.")
+	}
+}
+
+func isURLAlive(u string) (bool, error) {
+	req, err := http.NewRequest("HEAD", u, nil)
+	if err != nil {
+		return false, err
+	}
+
+	req.Header.Set("User-Agent", "linx-client")
+	if Config.apikey != "" {
+		req.Header.Set("Linx-Api-Key", Config.apikey)
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		return true, nil
+	}
+
+	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusGone {
+		return false, nil
+	}
+
+	return true, nil
 }
 
 func findDeleteKeyFor(identifier string) (string, string, error) {
