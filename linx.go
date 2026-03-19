@@ -14,6 +14,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -61,6 +62,7 @@ func main() {
 	var noClipboard bool
 	var useSelifURL bool
 	var cleanLog bool
+	var listLog bool
 
 	flag.BoolVar(&del, "d", false,
 		"Delete file at url (ex: -d https://linx.example.com/myphoto.jpg")
@@ -84,6 +86,8 @@ func main() {
 		"Return selif url")
 	flag.BoolVar(&cleanLog, "cleanup", false,
 		"Remove dead entries from the logfile")
+	flag.BoolVar(&listLog, "ls", false,
+		"List entries stored in the logfile")
 	flag.Parse()
 
 	parseConfig(configPath)
@@ -91,6 +95,11 @@ func main() {
 
 	if cleanLog {
 		cleanLogfile()
+		return
+	}
+
+	if listLog {
+		listLogEntries()
 		return
 	}
 
@@ -310,6 +319,25 @@ func cleanLogfile() {
 		fmt.Println("Removed stale entries from", Config.logfile)
 	} else {
 		fmt.Println("No dead entries found.")
+	}
+}
+
+func listLogEntries() {
+	fmt.Println("Logfile entries:")
+
+	if len(keys) == 0 {
+		fmt.Println("  (log is empty)")
+		return
+	}
+
+	urls := make([]string, 0, len(keys))
+	for url := range keys {
+		urls = append(urls, url)
+	}
+	sort.Strings(urls)
+
+	for _, url := range urls {
+		fmt.Printf("  %s -> %s\n", url, keys[url])
 	}
 }
 
