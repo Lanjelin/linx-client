@@ -6,17 +6,17 @@ name="binaries/""$version""/linx-client-v""$version""_"
 
 GOOS=darwin GOARCH=amd64 go build -o "$name"osx-amd64
 
-# darwin/386 is no longer supported by Go 1.26+; uncomment only if using
-# an older toolchain that still supports 32-bit macOS builds.
+# darwin/386 is no longer supported by Go 1.26+; keep this commented unless
+# you are forcing an older toolchain that still targets 32-bit macOS.
 # GOOS=darwin GOARCH=386 go build -o "$name"osx-386
 
 GOOS=freebsd GOARCH=amd64 go build -o "$name"freebsd-amd64
 
 GOOS=freebsd GOARCH=386 go build -o "$name"freebsd-386
 
-# GOOS=openbsd GOARCH=amd64 go build -o "$name"openbsd-amd64
+GOOS=openbsd GOARCH=amd64 go build -o "$name"openbsd-amd64
 
-# GOOS=openbsd GOARCH=386 go build -o "$name"bsd-386
+GOOS=openbsd GOARCH=386 go build -o "$name"bsd-386
 
 GOOS=linux GOARCH=arm GOARM=7 go build -o "$name"linux-armv7
 

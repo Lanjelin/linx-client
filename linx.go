@@ -20,8 +20,10 @@ import (
 	"time"
 
 	"github.com/atotto/clipboard"
+	jsonparser "github.com/knadh/koanf/parsers/json"
+	fileprovider "github.com/knadh/koanf/providers/file"
+	"github.com/knadh/koanf/v2"
 	"github.com/mutantmonkey/golinx/progress"
-	"github.com/timshannon/config"
 )
 
 type RespOkJSON struct {
@@ -341,6 +343,34 @@ func listLogEntries() {
 	}
 }
 
+type configFileData struct {
+	Siteurl string `json:"siteurl"`
+	Logfile string `json:"logfile"`
+	Apikey  string `json:"apikey"`
+}
+
+func loadConfigFile(path string) (configFileData, error) {
+	k := koanf.New(".")
+	if err := k.Load(fileprovider.Provider(path), jsonparser.Parser()); err != nil {
+		return configFileData{}, err
+	}
+
+	return configFileData{
+		Siteurl: k.String("siteurl"),
+		Logfile: k.String("logfile"),
+		Apikey:  k.String("apikey"),
+	}, nil
+}
+
+func writeConfigFile(path string, data configFileData) error {
+	byt, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return ioutil.WriteFile(path, byt, 0o600)
+}
+
 func isURLAlive(u string) (bool, error) {
 	req, err := http.NewRequest("HEAD", u, nil)
 	if err != nil {
@@ -439,35 +469,48 @@ func parseConfig(configPath string) {
 		checkErr(err)
 	}
 
-	cfg, err := config.LoadOrCreate(cfgFilePath)
-	checkErr(err)
-
-	Config.siteurl = ensureTrailingSlash(strings.TrimSpace(cfg.String("siteurl", "")))
-	Config.logfile = expandUserPath(cfg.String("logfile", ""))
-	Config.apikey = strings.TrimSpace(cfg.String("apikey", ""))
-
-	if Config.siteurl == "" || Config.logfile == "" {
-		fmt.Println("Configuring linx-client")
-		fmt.Println()
-
-		for Config.siteurl == "" {
-			Config.siteurl = getInput("Site url (ex: https://linx.example.com/)", false)
-			Config.siteurl = ensureTrailingSlash(Config.siteurl)
+	stored := configFileData{}
+	if _, err := os.Stat(cfgFilePath); err == nil {
+		if fileData, err := loadConfigFile(cfgFilePath); err == nil {
+			stored = fileData
+		} else {
+			fmt.Printf("Warning: could not read config at %s: %v\n", cfgFilePath, err)
 		}
-		cfg.SetValue("siteurl", Config.siteurl)
-
-		for Config.logfile == "" {
-			Config.logfile = expandUserPath(getInput("Logfile path (ex: ~/.linxlog)", false))
-		}
-		cfg.SetValue("logfile", Config.logfile)
-
-		if Config.apikey == "" {
-			Config.apikey = getInput("API key (leave blank if instance is public)", true)
-		}
-		cfg.SetValue("apikey", Config.apikey)
-
-		cfg.Write()
-
-		fmt.Printf("Configuration written at %s\n", cfgFilePath)
+	} else if !os.IsNotExist(err) {
+		checkErr(err)
 	}
+
+	Config.siteurl = ensureTrailingSlash(strings.TrimSpace(stored.Siteurl))
+	Config.logfile = expandUserPath(stored.Logfile)
+	Config.apikey = strings.TrimSpace(stored.Apikey)
+
+	needsConfig := Config.siteurl == "" || Config.logfile == ""
+	if !needsConfig {
+		return
+	}
+
+	fmt.Println("Configuring linx-client")
+	fmt.Println()
+
+	for Config.siteurl == "" {
+		Config.siteurl = getInput("Site url (ex: https://linx.example.com/)", false)
+		Config.siteurl = ensureTrailingSlash(Config.siteurl)
+	}
+
+	for Config.logfile == "" {
+		Config.logfile = expandUserPath(getInput("Logfile path (ex: ~/.linxlog)", false))
+	}
+
+	if Config.apikey == "" {
+		Config.apikey = getInput("API key (leave blank if instance is public)", true)
+	}
+
+	stored = configFileData{
+		Siteurl: Config.siteurl,
+		Logfile: Config.logfile,
+		Apikey:  Config.apikey,
+	}
+	checkErr(writeConfigFile(cfgFilePath, stored))
+
+	fmt.Printf("Configuration written at %s\n", cfgFilePath)
 }
