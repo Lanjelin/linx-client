@@ -14,6 +14,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -430,6 +431,39 @@ func findDeleteKeyFor(identifier string) (string, string, error) {
 func isHTTPURL(u string) bool {
 	lower := strings.ToLower(u)
 	return strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://")
+}
+
+func getHomeDir() string {
+	if homeDir, err := os.UserHomeDir(); err == nil && homeDir != "" {
+		return homeDir
+	}
+
+	if drive := os.Getenv("HOMEDRIVE"); drive != "" {
+		if homePath := os.Getenv("HOMEPATH"); homePath != "" {
+			return filepath.Join(drive, homePath)
+		}
+	}
+
+	if homePath := os.Getenv("HOMEPATH"); homePath != "" {
+		return homePath
+	}
+
+	return getInput("Path to home directory", false)
+}
+
+func getConfigDir() string {
+	if configDir, err := os.UserConfigDir(); err == nil && configDir != "" {
+		return configDir
+	}
+
+	if runtime.GOOS == "windows" {
+		if appdata := os.Getenv("APPDATA"); appdata != "" {
+			return appdata
+		}
+		return filepath.Join(getHomeDir(), "AppData", "Roaming")
+	}
+
+	return filepath.Join(getHomeDir(), ".config")
 }
 
 func expandUserPath(raw string) string {
