@@ -1,4 +1,4 @@
-module github.com/andreimarcu/linx-client
+module github.com/Lanjelin/linx-client
 
 go 1.26
 
