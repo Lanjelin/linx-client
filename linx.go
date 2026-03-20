@@ -198,7 +198,9 @@ func upload(filePath string, deleteKey string, accessKey string, randomize bool,
 		err := json.Unmarshal(body, &myResp)
 		checkErr(err)
 
-		if myResp.Sha256sum != ssum {
+		if myResp.Sha256sum == "" {
+			fmt.Println("Warning: server did not return sha256sum.")
+		} else if myResp.Sha256sum != ssum {
 			fmt.Println("Warning: sha256sum does not match.")
 		}
 
